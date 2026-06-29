@@ -1,5 +1,19 @@
 [project]
 name = "junos-mcp-server"
 version = "0.1.0"
-requires-python = ">=3.14"
-dependencies = []
+description = "Read-only JUNOS troubleshooting MCP server with dynamic targets from the SURF orchestrator"
+requires-python = ">=3.10,<3.13"
+dependencies = ["mcp", "junos-eznc", "httpx"]
+
+[project.scripts]
+junos-mcp-server = "junos_mcp_server.server:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/junos_mcp_server"]
