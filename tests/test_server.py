@@ -21,3 +21,35 @@ def test_settings_missing_required(monkeypatch):
     monkeypatch.delenv("ORCHESTRATOR_URL", raising=False)
     with pytest.raises(RuntimeError, match="ORCHESTRATOR_URL"):
         server.settings()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "show interfaces",
+        "  show version ",
+        "show route table inet.0",
+        "show interfaces | match ge-0/0/0",
+        "show configuration | display set",  # display is read-only
+    ],
+)
+def test_validate_accepts_show(command):
+    assert server.validate_show_command(command) == command.strip()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "",
+        "   ",
+        "configure",
+        "request system reboot",
+        "clear interfaces statistics",
+        "set cli timestamp",
+        "show interfaces | save /var/tmp/x",
+        "show configuration | load merge x",
+    ],
+)
+def test_validate_rejects_non_show(command):
+    with pytest.raises(ValueError, match="only show commands"):
+        server.validate_show_command(command)

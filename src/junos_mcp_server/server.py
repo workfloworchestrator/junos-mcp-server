@@ -28,3 +28,15 @@ def settings() -> Settings:
         ssh_password=_require("JUNOS_SSH_PASSWORD"),
         ssh_port=int(os.environ.get("JUNOS_SSH_PORT", "830")),
     )
+
+
+def validate_show_command(command: str) -> str:
+    cmd = command.strip()
+    tokens = cmd.split()
+    if not tokens or tokens[0] != "show":
+        raise ValueError("only show commands are allowed")
+    # block pipe modifiers that write on the device; match/count/display etc. are fine
+    pipe_heads = (seg.split()[:1] for seg in cmd.split("|")[1:] if seg.split())
+    if next((h for h in pipe_heads if h[0] in ("save", "load")), None) is not None:
+        raise ValueError("only show commands are allowed (no '| save' / '| load')")
+    return cmd
