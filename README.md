@@ -13,12 +13,28 @@ over NETCONF (PyEZ). It has no configuration/write capability by design.
 
 | Var | Required | Default | Purpose |
 |---|---|---|---|
-| `ORCHESTRATOR_URL` | yes | — | orchestrator base URL, e.g. `https://api.automation.surf.net` |
-| `GNMIC_HTTP_BASIC_USER` | yes | — | Basic Auth user for the targets endpoint |
-| `GNMIC_HTTP_BASIC_PASSWORD` | yes | — | Basic Auth password for the targets endpoint |
+| `ORCHESTRATOR_URL` | yes¹ | — | orchestrator base URL, e.g. `https://api.automation.surf.net` |
+| `GNMIC_HTTP_BASIC_USER` | yes¹ | — | Basic Auth user for the targets endpoint |
+| `GNMIC_HTTP_BASIC_PASSWORD` | yes¹ | — | Basic Auth password for the targets endpoint |
 | `JUNOS_SSH_USER` | yes | — | read-only device login user |
 | `JUNOS_SSH_PASSWORD` | yes | — | device login password |
 | `JUNOS_SSH_PORT` | no | `830` | NETCONF port |
+| `JUNOS_DEV_MODE` | no | `0` | development mode — serve `JUNOS_DEV_TARGETS` instead of querying the orchestrator |
+| `JUNOS_DEV_TARGETS` | dev² | `[]` | JSON list of node hostnames, e.g. `["r1.lab.net","r2.lab.net"]` |
+
+¹ Not required when `JUNOS_DEV_MODE` is set. &nbsp; ² Required (non-empty) when `JUNOS_DEV_MODE` is set.
+
+## Development mode
+
+Set `JUNOS_DEV_MODE=1` and `JUNOS_DEV_TARGETS` to a JSON list of your own nodes
+to bypass the orchestrator entirely — `list_devices()` then returns exactly that
+list and `run_show_command` connects to those hostnames. SSH credentials are
+still required; orchestrator/Basic-Auth vars are not.
+
+```bash
+JUNOS_DEV_MODE=1 JUNOS_DEV_TARGETS='["r1.lab.net","r2.lab.net"]' \
+  JUNOS_SSH_USER=ro JUNOS_SSH_PASSWORD=... uvx --from . junos-mcp-server
+```
 
 ## Run
 

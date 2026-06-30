@@ -3,7 +3,7 @@ import httpx
 from jnpr.junos import Device
 from jnpr.junos.exception import ConnectError
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -14,20 +14,39 @@ mcp = FastMCP("junos-mcp-server")
 
 
 class Settings(BaseSettings):
-    """Config from environment. Required string fields must be non-empty; a
-    missing one raises pydantic ValidationError naming the env var."""
+    """Config from environment.
 
-    orchestrator_url: str = Field(min_length=1, validation_alias="ORCHESTRATOR_URL")
-    basic_user: str = Field(min_length=1, validation_alias="GNMIC_HTTP_BASIC_USER")
-    basic_password: str = Field(min_length=1, validation_alias="GNMIC_HTTP_BASIC_PASSWORD")
+    Device login (ssh_*) is always required. In development mode
+    (JUNOS_DEV_MODE=1) the orchestrator is bypassed and JUNOS_DEV_TARGETS — a
+    JSON list of node hostnames — is served as the device list; otherwise the
+    orchestrator URL and Basic-Auth credentials are required."""
+
     ssh_user: str = Field(min_length=1, validation_alias="JUNOS_SSH_USER")
     ssh_password: str = Field(min_length=1, validation_alias="JUNOS_SSH_PASSWORD")
     ssh_port: int = Field(default=830, validation_alias="JUNOS_SSH_PORT")
+
+    dev_mode: bool = Field(default=False, validation_alias="JUNOS_DEV_MODE")
+    dev_targets: list[str] = Field(default_factory=list, validation_alias="JUNOS_DEV_TARGETS")
+
+    orchestrator_url: str = Field(default="", validation_alias="ORCHESTRATOR_URL")
+    basic_user: str = Field(default="", validation_alias="GNMIC_HTTP_BASIC_USER")
+    basic_password: str = Field(default="", validation_alias="GNMIC_HTTP_BASIC_PASSWORD")
 
     @field_validator("orchestrator_url")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def _check_mode(self) -> "Settings":
+        if self.dev_mode and not self.dev_targets:
+            raise ValueError("JUNOS_DEV_MODE is set but JUNOS_DEV_TARGETS is empty")
+        if not self.dev_mode and not (self.orchestrator_url and self.basic_user and self.basic_password):
+            raise ValueError(
+                "ORCHESTRATOR_URL, GNMIC_HTTP_BASIC_USER and GNMIC_HTTP_BASIC_PASSWORD "
+                "are required unless JUNOS_DEV_MODE is set"
+            )
+        return self
 
 
 def settings() -> Settings:
@@ -70,10 +89,12 @@ def _host_only(address: str) -> str:
 
 
 def fetch_targets() -> dict[str, str]:
+    cfg = settings()
+    if cfg.dev_mode:
+        return {node: node for node in cfg.dev_targets}
     # ponytail: process-wide 60s cache, fine for a single-user troubleshooting tool
     if _CACHE["targets"] is not None and (time.monotonic() - _CACHE["at"]) < _TTL:
         return _CACHE["targets"]
-    cfg = settings()
     url = f"{cfg.orchestrator_url}/api/surf/subscriptions/gnmi/targets"
     try:
         resp = httpx.get(

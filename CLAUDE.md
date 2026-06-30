@@ -21,6 +21,11 @@ through `validate_show_command()`, which allows only `show` commands and blocks
 `address` field is `fqdn:32767` (gNMI port) — we use the FQDN only and connect
 NETCONF on `JUNOS_SSH_PORT` (830).
 
+Dev mode: `JUNOS_DEV_MODE=1` + `JUNOS_DEV_TARGETS` (JSON list of node hostnames)
+makes `fetch_targets()` return `{node: node}` and skip the orchestrator. A
+`model_validator` enforces the mode rules: dev needs non-empty `JUNOS_DEV_TARGETS`;
+prod needs `ORCHESTRATOR_URL` + `GNMIC_HTTP_BASIC_*`. SSH creds required in both.
+
 ## Test
 `uv run --extra dev pytest -v`
 

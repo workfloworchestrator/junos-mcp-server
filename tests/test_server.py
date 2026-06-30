@@ -62,6 +62,22 @@ def test_fetch_targets_strips_port(monkeypatch):
     assert server.fetch_targets() == {"r1.surf.net": "r1.surf.net"}
 
 
+def test_fetch_targets_dev_mode_bypasses_orchestrator(monkeypatch):
+    server._CACHE.update(targets=None, at=0.0)  # reset cache
+
+    def boom(*a, **k):  # orchestrator must not be called in dev mode
+        raise AssertionError("httpx.get called in dev mode")
+
+    monkeypatch.setattr(server.httpx, "get", boom)
+    monkeypatch.setenv("JUNOS_DEV_MODE", "1")
+    monkeypatch.setenv("JUNOS_DEV_TARGETS", '["r1.lab.net", "r2.lab.net"]')
+    monkeypatch.setenv("JUNOS_SSH_USER", "ro")
+    monkeypatch.setenv("JUNOS_SSH_PASSWORD", "pw")
+    monkeypatch.delenv("ORCHESTRATOR_URL", raising=False)  # not required in dev mode
+    assert server.fetch_targets() == {"r1.lab.net": "r1.lab.net", "r2.lab.net": "r2.lab.net"}
+    assert server.list_devices() == ["r1.lab.net", "r2.lab.net"]
+
+
 def test_run_show_command_unknown_device(monkeypatch):
     monkeypatch.setattr(server, "fetch_targets", lambda: {"r1": "r1.surf.net"})
     out = server.run_show_command("nope", "show version")
