@@ -2,10 +2,15 @@ import os
 import time
 import httpx
 from dataclasses import dataclass
+from jnpr.junos import Device
+from jnpr.junos.exception import ConnectError
+from mcp.server.fastmcp import FastMCP
 
 
 _CACHE: dict = {"targets": None, "at": 0.0}
 _TTL = 60.0
+
+mcp = FastMCP("junos-mcp-server")
 
 
 @dataclass(frozen=True)
@@ -74,3 +79,39 @@ def fetch_targets() -> dict[str, str]:
     targets = {name: _host_only(entry["address"]) for name, entry in resp.json().items()}
     _CACHE.update(targets=targets, at=time.monotonic())
     return targets
+
+
+def run_show(fqdn: str, command: str) -> str:
+    cfg = settings()
+    dev = Device(host=fqdn, user=cfg.ssh_user, passwd=cfg.ssh_password, port=cfg.ssh_port)
+    try:
+        dev.open()
+        return dev.cli(command, warning=False)
+    except ConnectError as exc:
+        return f"could not connect to {fqdn}: {exc}"
+    except Exception as exc:  # ponytail: PyEZ raises many subclasses; return readable text, never a traceback
+        return f"error running '{command}' on {fqdn}: {exc}"
+    finally:
+        if dev.connected:
+            dev.close()
+
+
+@mcp.tool()
+def list_devices() -> list[str]:
+    """List JUNOS device names discovered from the orchestrator gNMI targets endpoint."""
+    return sorted(fetch_targets())
+
+
+@mcp.tool()
+def run_show_command(device: str, command: str) -> str:
+    """Run a read-only JUNOS 'show' command on a device and return its text output."""
+    command = validate_show_command(command)
+    targets = fetch_targets()
+    fqdn = targets.get(device)
+    if fqdn is None:
+        return f"unknown device '{device}'. Known devices: {', '.join(sorted(targets))}"
+    return run_show(fqdn, command)
+
+
+def main() -> None:
+    mcp.run()

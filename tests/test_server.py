@@ -78,3 +78,27 @@ def test_fetch_targets_strips_port(monkeypatch):
     monkeypatch.setenv("JUNOS_SSH_USER", "ro")
     monkeypatch.setenv("JUNOS_SSH_PASSWORD", "pw")
     assert server.fetch_targets() == {"r1.surf.net": "r1.surf.net"}
+
+
+def test_run_show_command_unknown_device(monkeypatch):
+    monkeypatch.setattr(server, "fetch_targets", lambda: {"r1": "r1.surf.net"})
+    out = server.run_show_command("nope", "show version")
+    assert "unknown device" in out and "r1" in out
+
+
+def test_run_show_command_dispatches(monkeypatch):
+    monkeypatch.setattr(server, "fetch_targets", lambda: {"r1": "r1.surf.net"})
+    monkeypatch.setattr(server, "run_show", lambda fqdn, cmd: f"OUT {fqdn} {cmd}")
+    out = server.run_show_command("r1", "  show version ")
+    assert out == "OUT r1.surf.net show version"
+
+
+def test_run_show_command_rejects_non_show(monkeypatch):
+    monkeypatch.setattr(server, "fetch_targets", lambda: {"r1": "r1.surf.net"})
+    with pytest.raises(ValueError, match="only show commands"):
+        server.run_show_command("r1", "request system reboot")
+
+
+def test_list_devices(monkeypatch):
+    monkeypatch.setattr(server, "fetch_targets", lambda: {"b": "b.net", "a": "a.net"})
+    assert server.list_devices() == ["a", "b"]
