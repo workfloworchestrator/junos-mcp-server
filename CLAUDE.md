@@ -5,7 +5,7 @@ Read-only JUNOS troubleshooting MCP server.
 ## Invariant (do not break)
 Read-only only. NEVER add a configuration/write tool. Every device command goes
 through `validate_show_command()`, which allows only `show` commands and blocks
-`| save` / `| load`.
+`| save` / `| append` / `| tee` / `| load`.
 
 ## Layout
 - `src/junos_mcp_server/server.py` — the whole server: `settings()`,

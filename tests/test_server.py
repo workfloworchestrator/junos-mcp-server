@@ -48,6 +48,9 @@ def test_validate_accepts_show(command):
         "set cli timestamp",
         "show interfaces | save /var/tmp/x",
         "show configuration | load merge x",
+        "show interfaces | append /var/tmp/x",
+        "show interfaces | tee /var/tmp/x",
+        "show foo | SAVE x",
     ],
 )
 def test_validate_rejects_non_show(command):

@@ -41,15 +41,24 @@ def settings() -> Settings:
     )
 
 
+_WRITE_PIPE_HEADS = {"save", "append", "tee", "load"}
+
+
 def validate_show_command(command: str) -> str:
+    """Return the command if it is a read-only 'show'; raise ValueError otherwise.
+
+    Enforces the read-only invariant: first token must be 'show', and no pipe
+    segment may invoke a modifier that writes on the device (save/append/tee/load).
+    """
     cmd = command.strip()
     tokens = cmd.split()
     if not tokens or tokens[0] != "show":
         raise ValueError("only show commands are allowed")
-    # block pipe modifiers that write on the device; match/count/display etc. are fine
     pipe_heads = (seg.split()[:1] for seg in cmd.split("|")[1:] if seg.split())
-    if next((h for h in pipe_heads if h[0] in ("save", "load")), None) is not None:
-        raise ValueError("only show commands are allowed (no '| save' / '| load')")
+    if any(h[0].lower() in _WRITE_PIPE_HEADS for h in pipe_heads):
+        raise ValueError(
+            "only show commands are allowed (no '| save' / '| append' / '| tee' / '| load')"
+        )
     return cmd
 
 
@@ -76,7 +85,10 @@ def fetch_targets() -> dict[str, str]:
         raise RuntimeError(f"targets endpoint error {exc.response.status_code} at {url}") from exc
     except httpx.HTTPError as exc:
         raise RuntimeError(f"cannot reach targets endpoint at {url}: {exc}") from exc
-    targets = {name: _host_only(entry["address"]) for name, entry in resp.json().items()}
+    try:
+        targets = {name: _host_only(entry["address"]) for name, entry in resp.json().items()}
+    except (ValueError, KeyError, AttributeError) as exc:
+        raise RuntimeError(f"unexpected targets response shape from {url}: {exc}") from exc
     _CACHE.update(targets=targets, at=time.monotonic())
     return targets
 
