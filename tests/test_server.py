@@ -53,3 +53,28 @@ def test_validate_accepts_show(command):
 def test_validate_rejects_non_show(command):
     with pytest.raises(ValueError, match="only show commands"):
         server.validate_show_command(command)
+
+
+@pytest.mark.parametrize(
+    "address,expected",
+    [("host.surf.net:32767", "host.surf.net"), ("host.surf.net", "host.surf.net")],
+)
+def test_host_only(address, expected):
+    assert server._host_only(address) == expected
+
+
+def test_fetch_targets_strips_port(monkeypatch):
+    server._CACHE.update(targets=None, at=0.0)  # reset cache
+
+    class FakeResp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"r1.surf.net": {"address": "r1.surf.net:32767", "subscriptions": []}}
+
+    monkeypatch.setattr(server.httpx, "get", lambda *a, **k: FakeResp())
+    monkeypatch.setenv("ORCHESTRATOR_URL", "https://api.example.net")
+    monkeypatch.setenv("GNMIC_HTTP_BASIC_USER", "gnmic")
+    monkeypatch.setenv("GNMIC_HTTP_BASIC_PASSWORD", "secret")
+    monkeypatch.setenv("JUNOS_SSH_USER", "ro")
+    monkeypatch.setenv("JUNOS_SSH_PASSWORD", "pw")
+    assert server.fetch_targets() == {"r1.surf.net": "r1.surf.net"}
