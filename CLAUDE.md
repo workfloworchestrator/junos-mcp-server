@@ -8,10 +8,13 @@ through `validate_show_command()`, which allows only `show` commands and blocks
 `| save` / `| append` / `| tee` / `| load`.
 
 ## Layout
-- `src/junos_mcp_server/server.py` — the whole server: `settings()`,
-  `fetch_targets()` (cached), `validate_show_command()`, `run_show()` (PyEZ),
-  and FastMCP tools `list_devices` / `run_show_command`.
-- `tests/test_server.py` — parametrized unit tests for the pure logic.
+- `src/junos_mcp_server/server.py` — the whole server: `Settings`
+  (pydantic-settings `BaseSettings`, env vars via `validation_alias`) +
+  `settings()`, `fetch_targets()` (cached), the `ShowCommand` pydantic model +
+  `validate_show_command()`, `run_show()` (PyEZ), and FastMCP tools
+  `list_devices` / `run_show_command`.
+- `tests/test_server.py` — parametrized unit tests for the command validator,
+  target parsing, and tool dispatch. (Settings is plain pydantic — not retested.)
 
 ## Targets source
 `GET {ORCHESTRATOR_URL}/api/surf/subscriptions/gnmi/targets` (Basic Auth). The

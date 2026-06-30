@@ -1,10 +1,10 @@
-import os
 import time
 import httpx
-from dataclasses import dataclass
 from jnpr.junos import Device
 from jnpr.junos.exception import ConnectError
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, Field, field_validator
+from pydantic_settings import BaseSettings
 
 
 _CACHE: dict = {"targets": None, "at": 0.0}
@@ -13,53 +13,56 @@ _TTL = 60.0
 mcp = FastMCP("junos-mcp-server")
 
 
-@dataclass(frozen=True)
-class Settings:
-    orchestrator_url: str
-    basic_user: str
-    basic_password: str
-    ssh_user: str
-    ssh_password: str
-    ssh_port: int
+class Settings(BaseSettings):
+    """Config from environment. Required string fields must be non-empty; a
+    missing one raises pydantic ValidationError naming the env var."""
 
+    orchestrator_url: str = Field(min_length=1, validation_alias="ORCHESTRATOR_URL")
+    basic_user: str = Field(min_length=1, validation_alias="GNMIC_HTTP_BASIC_USER")
+    basic_password: str = Field(min_length=1, validation_alias="GNMIC_HTTP_BASIC_PASSWORD")
+    ssh_user: str = Field(min_length=1, validation_alias="JUNOS_SSH_USER")
+    ssh_password: str = Field(min_length=1, validation_alias="JUNOS_SSH_PASSWORD")
+    ssh_port: int = Field(default=830, validation_alias="JUNOS_SSH_PORT")
 
-def _require(name: str) -> str:
-    value = os.environ.get(name)
-    if not value:
-        raise RuntimeError(f"missing required env var: {name}")
-    return value
+    @field_validator("orchestrator_url")
+    @classmethod
+    def _strip_trailing_slash(cls, value: str) -> str:
+        return value.rstrip("/")
 
 
 def settings() -> Settings:
-    return Settings(
-        orchestrator_url=_require("ORCHESTRATOR_URL").rstrip("/"),
-        basic_user=_require("GNMIC_HTTP_BASIC_USER"),
-        basic_password=_require("GNMIC_HTTP_BASIC_PASSWORD"),
-        ssh_user=_require("JUNOS_SSH_USER"),
-        ssh_password=_require("JUNOS_SSH_PASSWORD"),
-        ssh_port=int(os.environ.get("JUNOS_SSH_PORT", "830")),
-    )
+    return Settings()
 
 
 _WRITE_PIPE_HEADS = {"save", "append", "tee", "load"}
 
 
-def validate_show_command(command: str) -> str:
-    """Return the command if it is a read-only 'show'; raise ValueError otherwise.
+class ShowCommand(BaseModel):
+    """A validated read-only JUNOS 'show' command. Enforces the read-only
+    invariant: first token must be 'show', and no pipe segment may invoke a
+    modifier that writes on the device (save/append/tee/load)."""
 
-    Enforces the read-only invariant: first token must be 'show', and no pipe
-    segment may invoke a modifier that writes on the device (save/append/tee/load).
-    """
-    cmd = command.strip()
-    tokens = cmd.split()
-    if not tokens or tokens[0] != "show":
-        raise ValueError("only show commands are allowed")
-    pipe_heads = (seg.split()[:1] for seg in cmd.split("|")[1:] if seg.split())
-    if any(h[0].lower() in _WRITE_PIPE_HEADS for h in pipe_heads):
-        raise ValueError(
-            "only show commands are allowed (no '| save' / '| append' / '| tee' / '| load')"
-        )
-    return cmd
+    command: str
+
+    @field_validator("command")
+    @classmethod
+    def _must_be_read_only_show(cls, value: str) -> str:
+        cmd = value.strip()
+        tokens = cmd.split()
+        if not tokens or tokens[0] != "show":
+            raise ValueError("only show commands are allowed")
+        pipe_heads = (seg.split()[:1] for seg in cmd.split("|")[1:] if seg.split())
+        if any(h[0].lower() in _WRITE_PIPE_HEADS for h in pipe_heads):
+            raise ValueError(
+                "only show commands are allowed (no '| save' / '| append' / '| tee' / '| load')"
+            )
+        return cmd
+
+
+def validate_show_command(command: str) -> str:
+    """Return the normalized command if read-only; raise pydantic ValidationError
+    (a ValueError subclass) whose message contains 'only show commands' otherwise."""
+    return ShowCommand(command=command).command
 
 
 def _host_only(address: str) -> str:
