@@ -370,7 +370,7 @@ dev = [
 requires-dist = [
     { name = "httpx" },
     { name = "junos-eznc" },
-    { name = "mcp" },
+    { name = "mcp", specifier = "<2" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pytest", marker = "extra == 'dev'" },
