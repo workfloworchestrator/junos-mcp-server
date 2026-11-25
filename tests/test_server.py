@@ -78,10 +78,78 @@ def test_fetch_targets_dev_mode_bypasses_orchestrator(monkeypatch):
     assert server.list_devices() == ["r1.lab.net", "r2.lab.net"]
 
 
-def test_run_show_command_unknown_device(monkeypatch):
-    monkeypatch.setattr(server, "fetch_targets", lambda: {"r1": "r1.surf.net"})
-    out = server.run_show_command("nope", "show version")
-    assert "unknown device" in out and "r1" in out
+FLEET = {
+    "aac001a-jnx-01.dcn.surf.net": "aac001a-jnx-01.dcn.surf.net",
+    "aac001a-jnx-02.dcn.surf.net": "aac001a-jnx-02.dcn.surf.net",
+    "lw003a-jnx-03.dcn.surf.net": "lw003a-jnx-03.dcn.surf.net",
+    # two FQDNs sharing the short name "dup-jnx-01"
+    "dup-jnx-01.dcn.surf.net": "dup-jnx-01.dcn.surf.net",
+    "dup-jnx-01.other.surf.net": "dup-jnx-01.other.surf.net",
+}
+# many near-identical names, to prove suggestions are capped
+CROWDED = {f"cr{n:03d}a-jnx-01.dcn.surf.net": f"cr{n:03d}a-jnx-01.dcn.surf.net" for n in range(40)}
+
+
+@pytest.mark.parametrize(
+    "device,expected",
+    [
+        pytest.param("aac001a-jnx-01.dcn.surf.net", "aac001a-jnx-01.dcn.surf.net", id="exact-fqdn"),
+        pytest.param("AAC001A-JNX-01", "aac001a-jnx-01.dcn.surf.net", id="uppercase-short"),
+        pytest.param("aac001a-jnx-01", "aac001a-jnx-01.dcn.surf.net", id="lowercase-short"),
+        pytest.param("  Aac001A-Jnx-01.DCN.surf.NET\n", "aac001a-jnx-01.dcn.surf.net", id="mixed-case-fqdn-whitespace"),
+        pytest.param("dup-jnx-01", None, id="ambiguous-short-never-picked"),
+        pytest.param("dup-jnx-01.other.surf.net", "dup-jnx-01.other.surf.net", id="ambiguous-short-full-fqdn-ok"),
+        pytest.param("aac001a-jnx", None, id="prefix-is-not-a-match"),
+        pytest.param("lw003a-mer01-dist-03", None, id="unmanaged-switch-not-fuzzy-resolved"),
+    ],
+)
+def test_resolve_device(device, expected):
+    assert server.resolve_device(device, FLEET) == expected
+
+
+@pytest.mark.parametrize(
+    "targets,device,must_contain,must_not_contain,max_suggestions",
+    [
+        pytest.param(
+            FLEET, "nope", ["unknown device 'nope': not managed by this server", "list_devices"],
+            ["lw003a-jnx-03", "aac001a-jnx-01"], 0, id="unknown-short-error-no-full-list",
+        ),
+        pytest.param(
+            FLEET, "aac001a-jnx-1", ["Similar names of other devices:", "aac001a-jnx-01.dcn.surf.net"],
+            ["dup-jnx-01"], 5, id="near-miss-suggested",
+        ),
+        pytest.param(
+            FLEET, "dup-jnx-01", ["dup-jnx-01.dcn.surf.net", "dup-jnx-01.other.surf.net"],
+            [], 5, id="ambiguous-lists-candidates",
+        ),
+        pytest.param(
+            CROWDED, "cr0xxa-jnx-01", ["Similar names of other devices:"],
+            [], 5, id="suggestions-capped-at-5",
+        ),
+    ],
+)
+def test_run_show_command_unknown_device(monkeypatch, targets, device, must_contain, must_not_contain, max_suggestions):
+    monkeypatch.setattr(server, "fetch_targets", lambda: targets)
+    monkeypatch.setattr(server, "run_show", lambda *a: pytest.fail("must not run on an unresolved device"))
+    out = server.run_show_command(device, "show version")
+    assert all(text in out for text in must_contain)
+    assert not any(text in out for text in must_not_contain)
+    assert out.count(".dcn.surf.net") + out.count(".other.surf.net") <= max_suggestions
+    assert len(out) < 600
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        pytest.param("r1.surf.net", id="exact-fqdn"),
+        pytest.param("R1", id="uppercase-short"),
+        pytest.param(" R1.Surf.NET ", id="mixed-case-fqdn"),
+    ],
+)
+def test_run_show_command_resolves_device(monkeypatch, device):
+    monkeypatch.setattr(server, "fetch_targets", lambda: {"r1.surf.net": "r1.surf.net"})
+    monkeypatch.setattr(server, "run_show", lambda fqdn, cmd: f"OUT {fqdn} {cmd}")
+    assert server.run_show_command(device, "show version") == "OUT r1.surf.net show version"
 
 
 def test_run_show_command_dispatches(monkeypatch):
