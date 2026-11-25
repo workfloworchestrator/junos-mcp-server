@@ -1,4 +1,7 @@
+import difflib
+import itertools
 import time
+
 import httpx
 from jnpr.junos import Device
 from jnpr.junos.exception import ConnectError
@@ -132,21 +135,78 @@ def run_show(fqdn: str, command: str) -> str:
             dev.close()
 
 
+_MAX_SUGGESTIONS = 5
+
+
+def _short_name(fqdn: str) -> str:
+    return fqdn.split(".", 1)[0]
+
+
+def resolve_device(device: str, targets: dict[str, str]) -> str | None:
+    """Return the key in `targets` that `device` unambiguously names, else None.
+
+    Case-insensitive and whitespace-tolerant. An exact (FQDN) match wins;
+    otherwise a short hostname matches only if it equals the part before the
+    first dot of exactly one known FQDN. Never guesses: no fuzzy matching and
+    no picking between several candidates."""
+    name = device.strip().lower()
+    exact = [key for key in targets if key.lower() == name]
+    candidates = exact or [key for key in targets if _short_name(key.lower()) == name]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def unknown_device_message(device: str, targets: dict[str, str]) -> str:
+    """Short miss message: a few close matches (as FQDNs), never the full device list."""
+
+    def short(key: str) -> str:
+        return _short_name(key.lower())
+
+    by_short = {
+        name: list(keys)
+        for name, keys in itertools.groupby(sorted(targets, key=short), key=short)
+    }
+    close = difflib.get_close_matches(
+        _short_name(device.strip().lower()), list(by_short), n=_MAX_SUGGESTIONS
+    )
+    suggestions = list(
+        itertools.islice(
+            itertools.chain.from_iterable(by_short[n] for n in close), _MAX_SUGGESTIONS
+        )
+    )
+    hint = f" did you mean: {', '.join(suggestions)}." if suggestions else ""
+    return (
+        f"unknown device '{device}': not managed by this server.{hint}"
+        " Call list_devices to see the managed devices."
+    )
+
+
 @mcp.tool()
 def list_devices() -> list[str]:
-    """List JUNOS device names discovered from the orchestrator gNMI targets endpoint."""
+    """List the devices this server can reach, as lowercase FQDNs (e.g. 'aac001a-jnx-01.dcn.surf.net').
+
+    The list comes from the orchestrator's gNMI targets and contains only Juniper
+    routers. Other equipment (DCN/management switches, optical shelves) is not
+    managed by this server and cannot be reached."""
     return sorted(fetch_targets())
 
 
 @mcp.tool()
 def run_show_command(device: str, command: str) -> str:
-    """Run a read-only JUNOS 'show' command on a device and return its text output."""
+    """Run a read-only JUNOS 'show' command on a Juniper router and return its text output.
+
+    `device` is the FQDN (e.g. 'aac001a-jnx-01.dcn.surf.net') or the short
+    hostname (e.g. 'aac001a-jnx-01'), in any case; a short hostname must match
+    exactly one device. Only Juniper routers from the orchestrator's gNMI targets
+    are reachable (not DCN/management switches or optical shelves); call
+    list_devices to see them. An unknown name returns a short error with at most
+    a few 'did you mean' suggestions, never the full list."""
     command = validate_show_command(command)
     targets = fetch_targets()
-    fqdn = targets.get(device)
-    if fqdn is None:
-        return f"unknown device '{device}'. Known devices: {', '.join(sorted(targets))}"
-    return run_show(fqdn, command)
+    match resolve_device(device, targets):
+        case None:
+            return unknown_device_message(device, targets)
+        case key:
+            return run_show(targets[key], command)
 
 
 def main() -> None:
