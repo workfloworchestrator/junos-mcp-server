@@ -11,7 +11,7 @@ over NETCONF (PyEZ). It has no configuration/write capability by design.
 - `run_show_command(device, command)` — runs a `show` command; rejects anything else.
   `device` is the FQDN or the short hostname (e.g. `aac001a-jnx-01`), in any case; a
   short name must match exactly one device. An unknown name returns a short error
-  with at most 5 "did you mean" suggestions, never the full device list.
+  with at most 5 similar names of other devices, never the full device list.
 
 ## Environment
 

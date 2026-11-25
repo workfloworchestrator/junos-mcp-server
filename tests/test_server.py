@@ -115,7 +115,7 @@ def test_resolve_device(device, expected):
             ["lw003a-jnx-03", "aac001a-jnx-01"], 0, id="unknown-short-error-no-full-list",
         ),
         pytest.param(
-            FLEET, "aac001a-jnx-1", ["did you mean:", "aac001a-jnx-01.dcn.surf.net"],
+            FLEET, "aac001a-jnx-1", ["Similar names of other devices:", "aac001a-jnx-01.dcn.surf.net"],
             ["dup-jnx-01"], 5, id="near-miss-suggested",
         ),
         pytest.param(
@@ -123,7 +123,7 @@ def test_resolve_device(device, expected):
             [], 5, id="ambiguous-lists-candidates",
         ),
         pytest.param(
-            CROWDED, "cr0xxa-jnx-01", ["did you mean:"],
+            CROWDED, "cr0xxa-jnx-01", ["Similar names of other devices:"],
             [], 5, id="suggestions-capped-at-5",
         ),
     ],

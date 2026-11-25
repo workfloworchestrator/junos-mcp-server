@@ -173,7 +173,12 @@ def unknown_device_message(device: str, targets: dict[str, str]) -> str:
             itertools.chain.from_iterable(by_short[n] for n in close), _MAX_SUGGESTIONS
         )
     )
-    hint = f" did you mean: {', '.join(suggestions)}." if suggestions else ""
+    hint = (
+        f" Similar names of other devices: {', '.join(suggestions)}."
+        " Use one only if the name was a typo; never run a command on another device in its place."
+        if suggestions
+        else ""
+    )
     return (
         f"unknown device '{device}': not managed by this server.{hint}"
         " Call list_devices to see the managed devices."
@@ -199,7 +204,8 @@ def run_show_command(device: str, command: str) -> str:
     exactly one device. Only Juniper routers from the orchestrator's gNMI targets
     are reachable (not DCN/management switches or optical shelves); call
     list_devices to see them. An unknown name returns a short error with at most
-    a few 'did you mean' suggestions, never the full list."""
+    a few similar names of other devices, never the full list. Never run a
+    command on a similar device in place of the one asked about."""
     command = validate_show_command(command)
     targets = fetch_targets()
     match resolve_device(device, targets):
